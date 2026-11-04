@@ -49,23 +49,23 @@ jobs:
         - target: aarch64-pc-windows-msvc
           os: windows-11-arm
         - target: x86_64-unknown-linux-gnu
-          os: ubuntu-22.04
+          os: incredibuild-ubuntu-2204
         - target: x86_64-unknown-linux-musl
-          os: ubuntu-22.04
+          os: incredibuild-ubuntu-2204
         - target: aarch64-unknown-linux-gnu
-          os: ubuntu-22.04
+          os: incredibuild-ubuntu-2204
         - target: aarch64-unknown-linux-musl
-          os: ubuntu-22.04
+          os: incredibuild-ubuntu-2204
         - target: armv7-unknown-linux-gnueabihf
-          os: ubuntu-22.04
+          os: incredibuild-ubuntu-2204
         - target: armv7-unknown-linux-musleabihf
-          os: ubuntu-22.04
+          os: incredibuild-ubuntu-2204
         - target: riscv64gc-unknown-linux-gnu
-          os: ubuntu-22.04
+          os: incredibuild-ubuntu-2204
         - target: loongarch64-unknown-linux-gnu
-          os: ubuntu-22.04
+          os: incredibuild-ubuntu-2204
         - target: loongarch64-unknown-linux-musl
-          os: ubuntu-22.04
+          os: incredibuild-ubuntu-2204
 
     runs-on: ${{matrix.os}}
 
@@ -128,7 +128,7 @@ jobs:
   sha256sum:
     needs: release
     name: Create Sha256sum
-    runs-on: ubuntu-latest
+    runs-on: incredibuild-ubuntu-latest
     permissions:
       # Upload the release archives to the GitHub release.
       contents: write
