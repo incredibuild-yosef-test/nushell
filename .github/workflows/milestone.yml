@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   update-milestone:
-    runs-on: ubuntu-latest
+    runs-on: incredibuild-ubuntu-latest
     name: Milestone Update
     steps:
       - name: Set Milestone for PR
