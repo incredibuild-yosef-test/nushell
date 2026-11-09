@@ -1,0 +1,122 @@
+# TEMPORARY validation of the "Use Incredibuild" toggle (2026-11-09). Runs only on pushes to ib-test/validate.
+# Every run builds the same small crate and records what actually executed; the expected mode per run is set
+# by the hosted grid's settings in local ICA, not by this file. No GitHub Actions cache, no Cargo target cache.
+name: IB toggle validation
+
+on:
+  push:
+    branches:
+      - ib-test/validate
+
+permissions:
+  contents: read
+
+env:
+  IB_ACCEL_DEBUG: "1"
+  CARGO_TERM_COLOR: never
+  DIAG_DIR: /tmp/ibval
+  PHASE: ${{ vars.IB_VAL_PHASE }}
+
+jobs:
+  validate:
+    name: toggle validation - nu-path
+    runs-on: incredibuild-ubuntu-2404
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: What this job was given (settings, daemon, profile)
+        shell: bash
+        run: |
+          set +e
+          mkdir -p "$DIAG_DIR"
+          {
+          echo "phase=$PHASE run_id=$GITHUB_RUN_ID attempt=$GITHUB_RUN_ATTEMPT runner=$RUNNER_NAME cpus=$(nproc) mem=$(free -m | awk '/Mem/{print $2}')MB"
+          echo "IB_CONSOLE_SKIP=${IB_CONSOLE_SKIP-<unset>}"
+          echo "IB_CONSOLE_ARGS=${IB_CONSOLE_ARGS-<unset>}"
+          echo "IB_PROFILE_CONTENT: $([ -n "${IB_PROFILE_CONTENT:-}" ] && echo "set, sha256 $(printf %s "$IB_PROFILE_CONTENT" | base64 -d | sha256sum | cut -c1-16)" || echo unset)"
+          echo "ib_server running: $(pgrep -x ib_server >/dev/null && echo YES || echo no)"
+          echo "/etc/default/ib_profile.xml: $([ -f /etc/default/ib_profile.xml ] && echo "present, sha256 $(sha256sum < /etc/default/ib_profile.xml | cut -c1-16)" || echo absent)"
+          [ -f /etc/default/ib_profile.xml ] && echo "  rustc rule: $(grep -m1 'filename="rustc"' /etc/default/ib_profile.xml | sed 's/^ *//' | cut -c1-160)"
+          echo "IB cache dir: $(readlink -f /ib-workspace/incredibuild/cache 2>/dev/null || echo '<not mapped>')"
+          echo "which cargo: $(command -v cargo)  (shim first on PATH: $(command -v cargo | grep -q ib-accel && echo yes || echo no))"
+          } 2>&1 | tee "$DIAG_DIR/given.txt"
+          exit 0
+
+      - name: Toolchain and dependencies (not timed)
+        shell: bash
+        run: |
+          rustc -V; cargo --version
+          cargo fetch --locked
+
+      - name: Build nu-path (timed, with process sampling)
+        shell: bash
+        run: |
+          set +e -uo pipefail
+          SQL=/opt/incredibuild/bin/sqlite3
+          AGG=/etc/incredibuild/db/incredibuildBuildReport.db
+          maxbid() { [ -s "$AGG" ] && "$SQL" "$AGG" 'SELECT IFNULL(MAX(BuildId),0) FROM build_history;' 2>/dev/null || echo 0; }
+          rm -rf target
+          b0=$(maxbid)
+          ( while :; do ps -eo pid=,ppid=,comm=,args= | grep -E ' (ib_console|cargo|rustc|ib_server) ' ; echo ---; sleep 0.3; done ) > "$DIAG_DIR/ps-samples.txt" 2>/dev/null &
+          SAMPLER=$!
+          t0=$(date +%s.%N)
+          cargo --config "$PWD/.cargo/ci.toml" build -p nu-path --profile ci --locked -v > "$DIAG_DIR/build.log" 2>&1; rc=$?
+          t1=$(date +%s.%N)
+          kill $SAMPLER 2>/dev/null; wait $SAMPLER 2>/dev/null
+          b1=$(maxbid)
+          {
+          printf 'build exit=%s wall_s=%.1f buildid_before=%s buildid_after=%s compiling=%s\n' "$rc" \
+            "$(awk -v a="$t0" -v b="$t1" 'BEGIN{print b-a}')" "$b0" "$b1" "$(grep -c '^ *Compiling ' "$DIAG_DIR/build.log")"
+          echo "shim decision: $(grep -m1 '^\[ib-accel\] Final:' "$DIAG_DIR/build.log" | cut -c1-260)"
+          echo "shim override line: $(grep -m1 'IB_CONSOLE_ARGS override' "$DIAG_DIR/build.log" | cut -c1-200)"
+          echo "ib_console processes seen while building: $(awk '$3=="ib_console"{print $1}' "$DIAG_DIR/ps-samples.txt" | sort -u | wc -l)"
+          echo "ib_console argv: $(awk '$3=="ib_console"{ $1=$2=$3=""; print }' "$DIAG_DIR/ps-samples.txt" | sort -u | head -2 | cut -c1-260)"
+          echo "rustc processes seen: $(awk '$3=="rustc"{print $1}' "$DIAG_DIR/ps-samples.txt" | sort -u | wc -l)"
+          echo "ib_server seen: $(awk '$3=="ib_server"' "$DIAG_DIR/ps-samples.txt" | head -1 | wc -l)"
+          } | tee "$DIAG_DIR/summary.txt"
+          echo "buildid $b1 $b0" > "$DIAG_DIR/buildid.txt"
+          tail -2 "$DIAG_DIR/build.log"
+          exit $rc
+
+      - name: Incredibuild's own record of this build
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          read -r _ B1 B0 < "$DIAG_DIR/buildid.txt"
+          if [ "${B1:-0}" = "${B0:-0}" ]; then
+            echo "IB record: BuildId did not advance ($B0 -> $B1): ib_console did NOT run this build" | tee -a "$DIAG_DIR/summary.txt"
+            exit 0
+          fi
+          python3 - "$B1" <<'EOS' | tee -a "$DIAG_DIR/summary.txt"
+          import collections, os, sqlite3, sys
+          bid = sys.argv[1]
+          con = sqlite3.connect(f"file:/etc/incredibuild/db/incredibuildBuildReport_{bid}.db?mode=ro", uri=True)
+          cols = lambda t: [r[1] for r in con.execute(f'PRAGMA table_info("{t}")')]
+          print(f"IB record: BuildId {bid}")
+          for row in con.execute(f'SELECT * FROM "build_{bid}_cache_stats"'):
+              d = dict(zip(cols(f"build_{bid}_cache_stats"), row))
+              tot, hits = d.get("ib_cache_total") or 0, d.get("ib_cache_hits") or 0
+              print(f"  IB cache: cacheable={tot} hits={hits} misses={tot - hits}")
+          for typ, ppath, content in con.execute(f'SELECT type, path, content FROM "build_{bid}_profiles"'):
+              rl = [l.strip() for l in str(content or "").splitlines() if 'filename="rustc"' in l]
+              print(f"  loaded profile: type={typ} path={ppath} rustc rule: {rl[0][:150] if rl else '-'}")
+          c = cols(f"build_{bid}_process_partial")
+          rows = [dict(zip(c, r)) for r in con.execute(f'SELECT * FROM "build_{bid}_process_partial"')]
+          names = collections.Counter(os.path.basename(str(r["ProcessName"])) for r in rows)
+          print(f"  processes executed under IB: {len(rows)}  rustc executed: {names.get('rustc', 0)}")
+          EOS
+          echo "=== summary"; cat "$DIAG_DIR/given.txt" "$DIAG_DIR/summary.txt"
+
+      - name: Upload logs (no raw IB databases or profile copies)
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: ib-validate-${{ vars.IB_VAL_PHASE }}-attempt-${{ github.run_attempt }}
+          path: |
+            /tmp/ibval/*.log
+            /tmp/ibval/*.txt
+          retention-days: 7
