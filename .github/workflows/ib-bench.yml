@@ -1,0 +1,165 @@
+# TEMPORARY Incredibuild ON vs OFF benchmark (2026-11-09). Runs only on pushes to ib-test/bench.
+# Each repetition runs on ONE runner VM and builds the same commits in both modes (ON / OFF alternate order
+# between repetitions), so both modes share hardware, toolchain, image and code. No GitHub Actions cache and
+# no Cargo target cache: `target/` is removed before every timed build unless the label says "keep".
+# The ON arm uses a private, initially empty IB cache directory on this VM (the volume's own IB cache is not
+# touched) so "cold" and "warm" are exact; a final build against the cache Namespace delivered shows what a
+# fresh runner really gets.
+name: IB benchmark ON vs OFF
+
+on:
+  push:
+    branches:
+      - ib-test/bench
+
+permissions:
+  contents: read
+
+env:
+  IB_ACCEL_DEBUG: "1"
+  CARGO_TERM_COLOR: never
+  DIAG_DIR: /tmp/ibbench
+  BUILD: cargo --config .cargo/ci.toml build --workspace --profile ci --locked -v
+
+jobs:
+  bench:
+    name: bench rep ${{ matrix.rep }}
+    runs-on: incredibuild-ubuntu-2404
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        rep: [1, 2, 3]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Environment and received cache (read-only)
+        shell: bash
+        run: |
+          set +e
+          mkdir -p "$DIAG_DIR"
+          {
+          echo "rep=${{ matrix.rep }} run=$GITHUB_RUN_ID attempt=$GITHUB_RUN_ATTEMPT runner=$RUNNER_NAME cpus=$(nproc) mem=$(free -m | awk '/Mem/{print $2}')MB"
+          echo "commit=$(git rev-parse HEAD)"
+          echo "IB_CONSOLE_SKIP=${IB_CONSOLE_SKIP-<unset>} IB_CONSOLE_ARGS=${IB_CONSOLE_ARGS-<unset>}"
+          echo "ib_server running: $(pgrep -x ib_server >/dev/null && echo YES || echo no)"
+          echo "/etc/default/ib_profile.xml rustc rule: $(grep -m1 'filename="rustc"' /etc/default/ib_profile.xml 2>/dev/null | sed 's/^ *//' | cut -c1-120)"
+          C=$(readlink -f /ib-workspace/incredibuild/cache)
+          echo "IB cache dir: $C  received: $(find "$C" -type f 2>/dev/null | wc -l) files, $(du -sm "$C" 2>/dev/null | cut -f1) MB"
+          echo "last_runs on received volume:"; tail -4 /ib-workspace/cache/last_runs.txt 2>/dev/null
+          rustc -V; cargo -V
+          } 2>&1 | tee "$DIAG_DIR/env.txt"
+          [ -z "${IB_CONSOLE_SKIP:-}" ] || { echo "::error::grid toggle must be ON for the benchmark job (the OFF arm is set per build)"; exit 1; }
+          exit 0
+
+      - name: Fetch dependencies (not timed)
+        shell: bash
+        run: cargo fetch --locked
+
+      - name: Benchmark
+        shell: bash
+        run: |
+          set +e -u
+          REP=${{ matrix.rep }}
+          SQL=/opt/incredibuild/bin/sqlite3
+          AGG=/etc/incredibuild/db/incredibuildBuildReport.db
+          IBCTL="sudo /opt/incredibuild/etc/init.d/incredibuild"
+          LINK=/ib-workspace/incredibuild/cache
+          ORIG=$(readlink "$LINK")
+          BENCH=/ib-workspace/cache/bench-ibcache-$GITHUB_RUN_ID-$REP
+          OUT="$DIAG_DIR/results.tsv"
+          printf 'rep\torder\tlabel\tmode\tchange\twall_s\texit\tcompiling\tib_ran\tib_cacheable\tib_hits\tib_misses\trustc_executed\tcpu_busy_pct\n' > "$OUT"
+          maxbid() { [ -s "$AGG" ] && "$SQL" "$AGG" 'SELECT IFNULL(MAX(BuildId),0) FROM build_history;' 2>/dev/null || echo 0; }
+          cpu() { awk '/^cpu /{print $2+$3+$4+$7+$8, $2+$3+$4+$5+$6+$7+$8}' /proc/stat; }
+          ibstats() {  # cacheable hits rustc_executed for BuildId $1
+            python3 - "$1" <<'EOS'
+          import os, sqlite3, sys
+          b = sys.argv[1]
+          try:
+              con = sqlite3.connect(f"file:/etc/incredibuild/db/incredibuildBuildReport_{b}.db?mode=ro", uri=True)
+              cols = [r[1] for r in con.execute(f'PRAGMA table_info("build_{b}_cache_stats")')]
+              d = dict(zip(cols, con.execute(f'SELECT * FROM "build_{b}_cache_stats"').fetchone() or []))
+              pc = [r[1] for r in con.execute(f'PRAGMA table_info("build_{b}_process_partial")')]
+              n = sum(1 for r in con.execute(f'SELECT * FROM "build_{b}_process_partial"') if os.path.basename(str(dict(zip(pc, r))["ProcessName"])) == "rustc")
+              print(d.get("ib_cache_total") or 0, d.get("ib_cache_hits") or 0, n)
+          except Exception as e:
+              print("NA NA NA")
+          EOS
+          }
+          ib_on()  { unset IB_CONSOLE_SKIP; pgrep -x ib_server >/dev/null || { $IBCTL restart >/dev/null 2>&1; sleep 3; }; }
+          ib_off() { export IB_CONSOLE_SKIP=1; $IBCTL stop >/dev/null 2>&1; sleep 1; }
+          use_cache() { $IBCTL stop >/dev/null 2>&1; sudo ln -sfn "$1" "$LINK"; $IBCTL restart >/dev/null 2>&1; sleep 3; pgrep -x ib_server >/dev/null || echo "::warning::ib_server not running after cache switch"; }
+          checkout_change() {  # apply change $1 on top of the base commit
+            git checkout -q -- . 2>/dev/null
+            case "$1" in
+              C0) ;;
+              C1) sed -i 's/"Trim whitespace or specific character."/"Trim whitespace or a specific character."/' crates/nu-command/src/strings/str_/trim/trim_.rs ;;
+              C2) sed -i 's/"Return only the first several rows of the input. Counterpart/"Return only the first several rows of the input stream. Counterpart/' crates/nu-command/src/filters/first.rs ;;
+              C3) sed -i 's/"Pipeline has no type at this point"/"Pipeline has no type at this point yet"/' crates/nu-parser/src/type_check.rs ;;
+              C4) sed -i "s/Try specifying a column name instead\"/Try specifying a column name instead.\"/" crates/nu-protocol/src/value/mod.rs ;;
+              C5) sed -i 's/"ERROR: --log-file requires --log-target file"/"ERROR: --log-file requires --log-target=file"/' src/main.rs ;;
+              C6) printf '\n<!-- benchmark docs-only change -->\n' >> README.md ;;
+            esac
+            if [ "$1" != C0 ] && git diff --quiet; then echo "::error::change $1 did not apply"; return 1; fi
+            return 0
+          }
+          ORDER=0
+          build() {  # label mode change keep_target
+            local label=$1 mode=$2 change=$3 keep=${4:-no}
+            ORDER=$((ORDER+1))
+            checkout_change "$change" || { printf '%s\t%s\t%s\t%s\t%s\tNA\tAPPLYFAIL\n' "$REP" "$ORDER" "$label" "$mode" "$change" >> "$OUT"; return; }
+            if [ "$mode" = ON ]; then ib_on; else ib_off; fi
+            [ "$keep" = keep ] || rm -rf target
+            sync
+            local b0=$(maxbid) c0=($(cpu)) t0=$(date +%s.%N)
+            $BUILD > "$DIAG_DIR/build-$ORDER-$label.log" 2>&1; local rc=$?
+            local t1=$(date +%s.%N) c1=($(cpu)) b1=$(maxbid)
+            local wall=$(awk -v a="$t0" -v b="$t1" 'BEGIN{printf "%.1f", b-a}')
+            local busy=$(awk -v a="${c0[0]}" -v b="${c1[0]}" -v c="${c0[1]}" -v d="${c1[1]}" 'BEGIN{ if (d-c>0) printf "%.0f", 100*(b-a)/(d-c); else print "NA"}')
+            local comp=$(grep -c '^ *Compiling ' "$DIAG_DIR/build-$ORDER-$label.log")
+            local ran=no tot=- hits=- miss=- rex=-
+            if [ "$b1" != "$b0" ]; then ran=yes; read -r tot hits rex <<< "$(ibstats "$b1")"; [ "$tot" != NA ] && miss=$((tot-hits)); fi
+            printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$REP" "$ORDER" "$label" "$mode" "$change" "$wall" "$rc" "$comp" "$ran" "$tot" "$hits" "$miss" "$rex" "$busy" | tee -a "$OUT"
+            grep -m1 '^\[ib-accel\] Final:' "$DIAG_DIR/build-$ORDER-$label.log" | cut -c1-200 >> "$DIAG_DIR/shim-decisions.txt"
+            [ $rc -eq 0 ] || { echo "::warning::$label failed (exit $rc)"; grep -E '^error' "$DIAG_DIR/build-$ORDER-$label.log" | head -5; }
+          }
+          on_block() {
+            mkdir -p "$BENCH"; use_cache "$BENCH"
+            echo "ON arm: private IB cache $BENCH (empty: $(find "$BENCH" -type f | wc -l) files)"
+            build ON-cold ON C0
+            build ON-warm ON C0
+            for c in C1 C2 C3 C4 C5 C6; do build ON-warm ON $c; done
+            echo "private IB cache after ON arm: $(find "$BENCH" -type f | wc -l) files, $(du -sm "$BENCH" | cut -f1) MB"
+            use_cache "$ORIG"
+          }
+          off_block() {
+            build OFF-full OFF C0
+            for c in C1 C2 C3 C4 C5 C6; do build OFF-full OFF $c; done
+            # Context only (NOT a fair IB comparison): what a persisted target/ (e.g. a Rust target cache) gives.
+            for c in C1 C2 C3 C4 C5 C6; do
+              checkout_change C0; ib_off; cargo --config .cargo/ci.toml build --workspace --profile ci --locked -q >/dev/null 2>&1
+              build OFF-keep-target OFF $c keep
+            done
+          }
+          vol_before=$(find "$ORIG/" -type f | wc -l)
+          if [ $((REP % 2)) -eq 1 ]; then on_block; off_block; else off_block; on_block; fi
+          vol_after=$(find "$ORIG/" -type f | wc -l)
+          echo "volume IB cache untouched by the arms: $vol_before -> $vol_after files" | tee -a "$DIAG_DIR/env.txt"
+          # What a fresh runner really gets: the IB cache Namespace delivered on this volume, base commit.
+          build ON-volume-cache ON C0
+          sudo rm -rf "$BENCH"; git checkout -q -- .
+          echo; column -t -s $'\t' "$OUT"
+
+      - name: Upload results and logs
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: ib-bench-rep${{ matrix.rep }}-attempt-${{ github.run_attempt }}
+          path: |
+            /tmp/ibbench/*.tsv
+            /tmp/ibbench/*.txt
+            /tmp/ibbench/*.log
+          retention-days: 7
