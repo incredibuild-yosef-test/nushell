@@ -1,0 +1,119 @@
+# Manual Rust build for comparing Incredibuild ON vs OFF (local ICA test environment).
+#
+# Run it from the Actions tab ("Run workflow"). Incredibuild is switched ON or OFF in the ICA
+# dashboard (hosted grid "Use Incredibuild"), not here: this workflow only builds and reports
+# which mode actually ran. It never clears the Incredibuild cache, and it uses no GitHub
+# Actions cache and no Cargo target cache: target/ is deleted before the timed build, so every
+# run compiles the whole selected workload. Dependency downloads (cargo fetch) are not timed.
+name: IB Rust build (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      workload:
+        description: "What to build (full nushell workspace; 'with tests' also compiles every test target)"
+        type: choice
+        default: workspace
+        options:
+          - workspace
+          - workspace-with-tests
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ib-rust-build
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: never
+  IB_ACCEL_DEBUG: "1"
+  DIAG_DIR: /tmp/ibbuild
+
+jobs:
+  build:
+    name: cargo build (${{ inputs.workload }})
+    runs-on: incredibuild-ubuntu-2404
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Runner and Incredibuild state (read-only)
+        shell: bash
+        run: |
+          set +e
+          mkdir -p "$DIAG_DIR"
+          {
+          echo "runner=$RUNNER_NAME cpus=$(nproc) mem=$(free -m | awk '/Mem/{print $2}')MB commit=$(git rev-parse --short HEAD)"
+          echo "Incredibuild switch from ICA: $([ -n "${IB_CONSOLE_SKIP:-}" ] && echo OFF || echo ON)"
+          echo "ib_console flags override: ${IB_CONSOLE_ARGS:-<none, defaults>}"
+          echo "ib_server running: $(pgrep -x ib_server >/dev/null && echo yes || echo no)"
+          echo "profile installed: $([ -f /etc/default/ib_profile.xml ] && echo yes || echo no)"
+          C=$(readlink -f /ib-workspace/incredibuild/cache 2>/dev/null)
+          echo "Incredibuild cache received: $(find "$C" -type f 2>/dev/null | wc -l) files, $(du -sm "$C" 2>/dev/null | cut -f1) MB"
+          rustc -V; cargo -V
+          } 2>&1 | tee "$DIAG_DIR/state.txt"
+
+      - name: Download dependencies (not timed)
+        shell: bash
+        run: cargo fetch --locked
+
+      - name: Build (timed)
+        shell: bash
+        run: |
+          set +e -uo pipefail
+          case "${{ inputs.workload }}" in
+            workspace)            TARGETS="--workspace" ;;
+            workspace-with-tests) TARGETS="--workspace --all-targets" ;;
+          esac
+          SQL=/opt/incredibuild/bin/sqlite3
+          AGG=/etc/incredibuild/db/incredibuildBuildReport.db
+          maxbid() { [ -s "$AGG" ] && "$SQL" "$AGG" 'SELECT IFNULL(MAX(BuildId),0) FROM build_history;' 2>/dev/null || echo 0; }
+          rm -rf target
+          b0=$(maxbid); t0=$(date +%s.%N)
+          cargo --config .cargo/ci.toml build $TARGETS --profile ci --locked -v > "$DIAG_DIR/build.log" 2>&1; rc=$?
+          t1=$(date +%s.%N); b1=$(maxbid)
+          wall=$(awk -v a="$t0" -v b="$t1" 'BEGIN{printf "%.1f", b-a}')
+          mins=$(awk -v w="$wall" 'BEGIN{printf "%d min %02d s", int(w/60), int(w)%60}')
+          mode=OFF; stats="Incredibuild did not run (BuildId unchanged)"
+          if [ "$b1" != "$b0" ]; then
+            mode=ON
+            stats=$(python3 - "$b1" <<'EOS'
+          import os, sqlite3, sys
+          b = sys.argv[1]
+          con = sqlite3.connect(f"file:/etc/incredibuild/db/incredibuildBuildReport_{b}.db?mode=ro", uri=True)
+          cols = [r[1] for r in con.execute(f'PRAGMA table_info("build_{b}_cache_stats")')]
+          d = dict(zip(cols, con.execute(f'SELECT * FROM "build_{b}_cache_stats"').fetchone() or []))
+          pc = [r[1] for r in con.execute(f'PRAGMA table_info("build_{b}_process_partial")')]
+          rustc = sum(1 for r in con.execute(f'SELECT * FROM "build_{b}_process_partial"') if os.path.basename(str(dict(zip(pc, r))["ProcessName"])) == "rustc")
+          tot, hits = d.get("ib_cache_total") or 0, d.get("ib_cache_hits") or 0
+          print(f"cacheable={tot} hits={hits} misses={tot - hits} rustc_executed={rustc}")
+          EOS
+          )
+          fi
+          shim=$(grep -m1 '^\[ib-accel\] Final:' "$DIAG_DIR/build.log" | cut -c1-160)
+          {
+            echo "### Rust build: ${{ inputs.workload }}"
+            echo
+            echo "| Item | Value |"
+            echo "| --- | --- |"
+            echo "| Build time | **${wall} s** (${mins}) |"
+            echo "| Exit code | $rc |"
+            echo "| Incredibuild | **$mode** |"
+            echo "| Incredibuild stats | $stats |"
+            echo "| Crates compiled | $(grep -c '^ *Compiling ' "$DIAG_DIR/build.log") |"
+            echo "| Runner | $(nproc) vCPU, $(free -m | awk '/Mem/{print $2}') MB |"
+            echo "| Wrapper decision | \`$shim\` |"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          tail -3 "$DIAG_DIR/build.log"
+          exit $rc
+
+      - name: Upload build log
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: ib-rust-build-${{ github.run_number }}-attempt-${{ github.run_attempt }}
+          path: /tmp/ibbuild/*
+          retention-days: 14
