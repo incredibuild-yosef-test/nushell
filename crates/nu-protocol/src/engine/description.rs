@@ -35,45 +35,39 @@ impl Default for Doccomments {
     }
 }
 
+/// Position of the first byte after the leading spaces of a `#` comment line.
+///
+/// Scanning starts after the `#` (index 1) and stops at the first non-space byte, at
+/// the end of the line, or at `limit`, whichever comes first.
+fn skip_comment_indent(contents: &[u8], limit: usize) -> usize {
+    let mut pos = 1;
+    while pos < contents.len() && pos < limit && contents[pos] == b' ' {
+        pos += 1;
+    }
+    pos
+}
+
+/// Builds a description from `#` comment lines, returning `(brief, extra)`.
+///
+/// The first line's indentation is removed from every line (later lines lose at most
+/// that much), and the text is split into brief and extra parts at the first blank line.
 pub(super) fn build_desc(comment_lines: &[&[u8]]) -> (String, String) {
     let mut description = String::new();
 
-    let mut num_spaces = 0;
-    let mut first = true;
+    // The indentation of the first line, which later lines are dedented by.
+    let mut num_spaces = None;
 
     // Use the comments to build the item/command description
     for contents in comment_lines {
-        let comment_line = if first {
-            // Count the number of spaces still at the front, skipping the '#'
-            let mut pos = 1;
-            while pos < contents.len() {
-                if let Some(b' ') = contents.get(pos) {
-                    // continue
-                } else {
-                    break;
-                }
-                pos += 1;
+        let pos = match num_spaces {
+            None => {
+                let pos = skip_comment_indent(contents, usize::MAX);
+                num_spaces = Some(pos);
+                pos
             }
-
-            num_spaces = pos;
-
-            first = false;
-
-            String::from_utf8_lossy(&contents[pos..]).to_string()
-        } else {
-            let mut pos = 1;
-
-            while pos < contents.len() && pos < num_spaces {
-                if let Some(b' ') = contents.get(pos) {
-                    // continue
-                } else {
-                    break;
-                }
-                pos += 1;
-            }
-
-            String::from_utf8_lossy(&contents[pos..]).to_string()
+            Some(limit) => skip_comment_indent(contents, limit),
         };
+        let comment_line = String::from_utf8_lossy(&contents[pos..]).to_string();
 
         if !description.is_empty() {
             description.push('\n');
@@ -87,5 +81,33 @@ pub(super) fn build_desc(comment_lines: &[&[u8]]) -> (String, String) {
         (brief_desc.to_string(), extra_desc.to_string())
     } else {
         (description, String::default())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_desc;
+
+    #[test]
+    fn single_paragraph_is_all_brief() {
+        let lines: [&[u8]; 2] = [b"# hello", b"# world"];
+        assert_eq!(
+            build_desc(&lines),
+            ("hello\nworld".to_string(), String::new())
+        );
+    }
+
+    #[test]
+    fn later_lines_lose_at_most_the_first_lines_indent() {
+        let lines: [&[u8]; 4] = [b"#   indented", b"#     more", b"#", b"# extra"];
+        assert_eq!(
+            build_desc(&lines),
+            ("indented\n  more".to_string(), "extra".to_string())
+        );
+    }
+
+    #[test]
+    fn no_lines_gives_empty_description() {
+        assert_eq!(build_desc(&[]), (String::new(), String::new()));
     }
 }

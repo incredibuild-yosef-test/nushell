@@ -59,10 +59,11 @@ fn render_or<'a>(content: Option<&str>, default: impl FnOnce() -> Cow<'a, str>) 
     const NEWLINE: char = '\n';
     const LINEBREAK: &str = "\r\n";
 
-    match content {
-        Some(content) => content.replace(NEWLINE, LINEBREAK).into(),
-        None => default().replace(NEWLINE, LINEBREAK).into(),
-    }
+    let text: Cow<'_, str> = match content {
+        Some(content) => content.into(),
+        None => default(),
+    };
+    text.replace(NEWLINE, LINEBREAK).into()
 }
 
 impl Prompt for NushellPrompt {

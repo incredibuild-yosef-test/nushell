@@ -117,6 +117,28 @@ impl Command for Last {
     }
 }
 
+/// The row count `last` was given, if any: an int (rows) or a filesize (bytes, binary input
+/// only). Negative values and any other type are errors.
+fn parse_row_count(rows_val: Option<Value>) -> Result<Option<usize>, ShellError> {
+    let Some(v) = rows_val else {
+        return Ok(None);
+    };
+    let span = v.span();
+    match v {
+        Value::Int { val, .. } => usize::try_from(val)
+            .map(Some)
+            .map_err(|_| ShellError::NeedsPositiveValue { span }),
+        Value::Filesize { val, .. } => usize::try_from(val)
+            .map(Some)
+            .map_err(|_| ShellError::NeedsPositiveValue { span }),
+        ref val => Err(ShellError::RuntimeTypeMismatch {
+            expected: Type::custom("int or filesize"),
+            actual: val.get_type(),
+            span: val.span(),
+        }),
+    }
+}
+
 /// Body of `last`, shared by `run` and `run_const`: the last `rows_val` items of `input`, or the last item when `rows_val` is `None`.
 fn last_helper(
     rows_val: Option<Value>,
@@ -129,27 +151,7 @@ fn last_helper(
         .as_ref()
         .is_some_and(|v| matches!(v, Value::Filesize { .. }));
 
-    let rows: Option<usize> = match rows_val {
-        Some(v) => {
-            let span = v.span();
-            match v {
-                Value::Int { val, .. } => Some(
-                    usize::try_from(val).map_err(|_| ShellError::NeedsPositiveValue { span })?,
-                ),
-                Value::Filesize { val, .. } => Some(
-                    usize::try_from(val).map_err(|_| ShellError::NeedsPositiveValue { span })?,
-                ),
-                ref val => {
-                    return Err(ShellError::RuntimeTypeMismatch {
-                        expected: Type::custom("int or filesize"),
-                        actual: val.get_type(),
-                        span: val.span(),
-                    });
-                }
-            }
-        }
-        None => None,
-    };
+    let rows = parse_row_count(rows_val)?;
 
     // FIXME: Please read the FIXME message in `first.rs`'s `first_helper` implementation.
     // It has the same issue.

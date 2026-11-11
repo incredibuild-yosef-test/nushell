@@ -14,23 +14,22 @@ use tabled::{
 
 use crate::common::get_leading_trailing_space_style;
 
+/// Display width of `text` in terminal columns (ANSI sequences do not count).
 pub fn string_width(text: &str) -> usize {
     get_text_width(text)
 }
 
+/// Wraps `text` to `width` columns, breaking only between words when `keep_words` is set.
+/// Text that already fits is returned unchanged.
 pub fn string_wrap(text: &str, width: usize, keep_words: bool) -> String {
-    if text.is_empty() {
-        return String::new();
-    }
-
-    let text_width = string_width(text);
-    if text_width <= width {
+    if text.is_empty() || string_width(text) <= width {
         return text.to_owned();
     }
 
     Wrap::wrap(text, width, keep_words)
 }
 
+/// Pads every line of `text` with spaces up to `width` columns.
 pub fn string_expand(text: &str, width: usize) -> String {
     use std::{borrow::Cow, iter::repeat_n};
     use tabled::grid::util::string::{get_line_width, get_lines};
@@ -41,8 +40,7 @@ pub fn string_expand(text: &str, width: usize) -> String {
 
             if length < width {
                 let mut line = line.into_owned();
-                let remain = width - length;
-                line.extend(repeat_n(' ', remain));
+                line.extend(repeat_n(' ', width - length));
                 Cow::Owned(line)
             } else {
                 line
@@ -52,10 +50,10 @@ pub fn string_expand(text: &str, width: usize) -> String {
         .join("\n")
 }
 
+/// The first line of `text`, truncated to `width` columns.
 pub fn string_truncate(text: &str, width: usize) -> String {
-    let line = match text.lines().next() {
-        Some(line) => line,
-        None => return String::new(),
+    let Some(line) = text.lines().next() else {
+        return String::new();
     };
 
     Truncate::truncate(line, width).into_owned()

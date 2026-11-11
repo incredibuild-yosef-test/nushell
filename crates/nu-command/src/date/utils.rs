@@ -2,6 +2,8 @@ use super::formats::{FormatRow, format_rows, parse_date_text};
 use chrono::{DateTime, FixedOffset, Local, Timelike};
 use nu_protocol::{ShellError, Span, Value, record};
 
+/// Parses a date-time string: RFC 3339 first (the common, fast case), then every layout
+/// `into datetime` accepts. On failure the error is returned as an error `Value`.
 pub(crate) fn parse_date_from_string(
     input: &str,
     span: Span,

@@ -579,34 +579,29 @@ fn handle_the_rest(
     }
 }
 
+/// The character for an integer code point (`char --integer`).
 fn integer_to_unicode_char(value: Spanned<i64>) -> Result<char, ShellError> {
-    let decoded_char = value.item.try_into().ok().and_then(std::char::from_u32);
-
-    if let Some(ch) = decoded_char {
-        Ok(ch)
-    } else {
-        Err(ShellError::TypeMismatch {
+    u32::try_from(value.item)
+        .ok()
+        .and_then(std::char::from_u32)
+        .ok_or_else(|| ShellError::TypeMismatch {
             err_message: "not a valid Unicode codepoint".into(),
             span: value.span,
         })
-    }
 }
 
+/// The character for a hexadecimal code point such as `1f468` (`char --unicode`).
 fn string_to_unicode_char(s: Spanned<String>) -> Result<char, ShellError> {
-    let decoded_char = u32::from_str_radix(&s.item, 16)
+    u32::from_str_radix(&s.item, 16)
         .ok()
-        .and_then(std::char::from_u32);
-
-    if let Some(ch) = decoded_char {
-        Ok(ch)
-    } else {
-        Err(ShellError::TypeMismatch {
+        .and_then(std::char::from_u32)
+        .ok_or_else(|| ShellError::TypeMismatch {
             err_message: "error decoding Unicode character".into(),
             span: s.span,
         })
-    }
 }
 
+/// The character for a name from the `char` table, e.g. `newline` or `nf_branch`.
 fn str_to_character(s: &str) -> Option<String> {
     CHAR_MAP.get(s).map(|s| s.into())
 }

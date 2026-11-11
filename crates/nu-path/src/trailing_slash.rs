@@ -5,6 +5,9 @@ use std::{
 
 /// Strip any trailing slashes from a non-root path. This is required in some contexts, for example
 /// for the `PWD` environment variable.
+///
+/// A path without a trailing slash is returned borrowed, so the common case does not allocate.
+/// The root directory keeps its single separator.
 pub fn strip_trailing_slash(path: &Path) -> Cow<'_, Path> {
     if has_trailing_slash(path) {
         // If there are, the safest thing to do is have Rust parse the path for us and build it
@@ -23,8 +26,11 @@ pub fn strip_trailing_slash(path: &Path) -> Cow<'_, Path> {
 pub fn has_trailing_slash(path: &Path) -> bool {
     use std::os::windows::ffi::OsStrExt;
 
-    let last = path.as_os_str().encode_wide().last();
-    last == Some(b'\\' as u16) || last == Some(b'/' as u16)
+    // Windows accepts both separators.
+    matches!(
+        path.as_os_str().encode_wide().last(),
+        Some(c) if c == u16::from(b'\\') || c == u16::from(b'/')
+    )
 }
 
 /// `true` if the path has a trailing slash, including if it's the root directory.

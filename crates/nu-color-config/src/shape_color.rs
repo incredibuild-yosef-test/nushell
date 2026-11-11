@@ -30,14 +30,14 @@ pub fn default_shape_color(shape: &str) -> Style {
         .unwrap_or_default()
 }
 
+/// Style for a shape key from the live config, falling back to the default when the key
+/// is missing or its value is not a usable color. Shapes do not use color_config
+/// closures, currently.
 pub fn get_shape_color(shape: &str, conf: &Config) -> Style {
-    match conf.color_config.get(shape) {
-        Some(int_color) => {
-            // Shapes do not use color_config closures, currently.
-            style_from_color_value(int_color).unwrap_or_else(|| default_shape_color(shape))
-        }
-        None => default_shape_color(shape),
-    }
+    conf.color_config
+        .get(shape)
+        .and_then(style_from_color_value)
+        .unwrap_or_else(|| default_shape_color(shape))
 }
 
 #[cfg(test)]

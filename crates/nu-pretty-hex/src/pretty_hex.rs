@@ -4,9 +4,7 @@ use nu_ansi_term::{Color, Style};
 /// Returns a one-line hexdump of `source` grouped in default format without header
 /// and ASCII column.
 pub fn simple_hex<T: AsRef<[u8]>>(source: &T) -> String {
-    let mut writer = String::new();
-    hex_write(&mut writer, source, HexConfig::simple(), None).unwrap_or(());
-    writer
+    hex_to_string(source, HexConfig::simple(), None)
 }
 
 /// Dump `source` as hex octets in default format without header and ASCII column to the `writer`.
@@ -21,9 +19,7 @@ where
 /// Return a multi-line hexdump in default format complete with addressing, hex digits,
 /// and ASCII representation.
 pub fn pretty_hex<T: AsRef<[u8]>>(source: &T) -> String {
-    let mut writer = String::new();
-    hex_write(&mut writer, source, HexConfig::default(), Some(true)).unwrap_or(());
-    writer
+    hex_to_string(source, HexConfig::default(), Some(true))
 }
 
 /// Write multi-line hexdump in default format complete with addressing, hex digits,
@@ -38,8 +34,14 @@ where
 
 /// Return a hexdump of `source` in specified format.
 pub fn config_hex<T: AsRef<[u8]>>(source: &T, cfg: HexConfig) -> String {
+    hex_to_string(source, cfg, Some(true))
+}
+
+/// Runs [`hex_write`] into a new `String`. Writing to a `String` cannot fail, so the
+/// result is ignored, as the callers above always did.
+fn hex_to_string<T: AsRef<[u8]>>(source: &T, cfg: HexConfig, with_color: Option<bool>) -> String {
     let mut writer = String::new();
-    hex_write(&mut writer, source, cfg, Some(true)).unwrap_or(());
+    hex_write(&mut writer, source, cfg, with_color).unwrap_or(());
     writer
 }
 

@@ -63,14 +63,17 @@ where
         self.peek_next(0)
     }
 
+    /// The next byte without consuming it, or NUL at end of input.
     pub fn peek_or_null(&mut self) -> Result<u8> {
         Ok(self.peek()?.unwrap_or(b'\x00'))
     }
 
+    /// Consumes a byte that was already peeked. Panics if nothing was peeked.
     pub fn eat_char(&mut self) -> u8 {
         self.ch.remove(0)
     }
 
+    /// Pushes `ch` back so it is the next byte read.
     pub fn uneat_char(&mut self, ch: u8) {
         self.ch.insert(0, ch);
     }
@@ -89,18 +92,17 @@ where
         }
     }
 
+    /// Consumes and returns the next byte, or NUL at end of input.
     pub fn next_char_or_null(&mut self) -> Result<u8> {
         Ok(self.next_char()?.unwrap_or(b'\x00'))
     }
 
+    /// Consumes the rest of the current line, stopping before its `\n` (or at end of input).
     fn eat_line(&mut self) -> Result<()> {
-        loop {
-            match self.peek()? {
-                Some(b'\n') | None => return Ok(()),
-                _ => {}
-            }
+        while !matches!(self.peek()?, Some(b'\n') | None) {
             self.eat_char();
         }
+        Ok(())
     }
 
     pub fn parse_whitespace(&mut self) -> Result<()> {

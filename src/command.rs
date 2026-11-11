@@ -980,17 +980,16 @@ fn parse_cli_args_with_command_line(
     })
 }
 
-// Helper to build a spanned boolean-like "true" value.
-// No source span — these originate from CLI argument parsing, before the engine exists.
+/// A spanned boolean-like `"true"` value, for flags given without a value.
+///
+/// No source span: these originate from CLI argument parsing, before the engine exists.
 fn spanned_true() -> Spanned<String> {
-    Spanned {
-        item: "true".to_string(),
-        span: Span::unknown(),
-    }
+    spanned_value("true".to_string())
 }
 
-// Wrap a string value in a Spanned wrapper with unknown span.
-// No source span — these originate from CLI argument parsing, before the engine exists.
+/// Wrap a string value in a `Spanned` wrapper with an unknown span.
+///
+/// No source span: these originate from CLI argument parsing, before the engine exists.
 fn spanned_value(value: String) -> Spanned<String> {
     Spanned {
         item: value,

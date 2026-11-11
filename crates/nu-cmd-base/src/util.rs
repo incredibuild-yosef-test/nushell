@@ -3,7 +3,7 @@ use nu_protocol::{
     engine::{EngineState, Stack},
     shell_error::generic::GenericError,
 };
-use std::ops::Bound;
+use std::{borrow::Cow, ops::Bound};
 
 type MakeRangeError = fn(&str, Span) -> ShellError;
 
@@ -29,6 +29,20 @@ pub fn process_range(range: &Range) -> Result<(isize, isize), MakeRangeError> {
 const HELP_MSG: &str = "Nushell's config file can be found with the command: $nu.config-path. \
 For more help: (https://nushell.sh/book/configuration.html#configurations-with-built-in-commands)";
 
+/// A configuration error pointing at `span`, with a hint on where the config file is.
+///
+/// `#[track_caller]` so the error keeps recording the location of the code that failed,
+/// as `GenericError::new` does, rather than this helper.
+#[track_caller]
+fn config_error(
+    msg: impl Into<Cow<'static, str>>,
+    label: impl Into<Cow<'static, str>>,
+    span: Span,
+) -> ShellError {
+    ShellError::Generic(GenericError::new(msg, label, span).with_help(HELP_MSG))
+}
+
+/// The editor executable and its arguments from a string or list config value.
 fn get_editor_commandline(
     value: &Value,
     var_name: &str,
@@ -42,23 +56,17 @@ fn get_editor_commandline(
                     let params = editor_cmd.collect::<Result<_, ShellError>>()?;
                     Ok((editor, params))
                 }
-                _ => Err(ShellError::Generic(
-                    GenericError::new(
-                        "Editor executable is missing",
-                        "Set the first element to an executable",
-                        value.span(),
-                    )
-                    .with_help(HELP_MSG),
+                _ => Err(config_error(
+                    "Editor executable is missing",
+                    "Set the first element to an executable",
+                    value.span(),
                 )),
             }
         }
-        Value::String { .. } | Value::List { .. } => Err(ShellError::Generic(
-            GenericError::new(
-                format!("{var_name} should be a non-empty string or list<String>"),
-                "Specify an executable here",
-                value.span(),
-            )
-            .with_help(HELP_MSG),
+        Value::String { .. } | Value::List { .. } => Err(config_error(
+            format!("{var_name} should be a non-empty string or list<String>"),
+            "Specify an executable here",
+            value.span(),
         )),
         x => Err(ShellError::CantConvert {
             to_type: "string or list<string>".into(),
@@ -69,6 +77,7 @@ fn get_editor_commandline(
     }
 }
 
+/// The editor to launch: `$env.config.buffer_editor`, else `$env.VISUAL`, else `$env.EDITOR`.
 pub fn get_editor(
     engine_state: &EngineState,
     stack: &Stack,
@@ -85,13 +94,10 @@ pub fn get_editor(
     } else if let Some(value) = stack.get_env_var(engine_state, "EDITOR") {
         get_editor_commandline(value, "$env.EDITOR")
     } else {
-        Err(ShellError::Generic(
-            GenericError::new(
-                "No editor configured",
-                "Please specify one via `$env.config.buffer_editor` or `$env.EDITOR`/`$env.VISUAL`",
-                span,
-            )
-            .with_help(HELP_MSG),
+        Err(config_error(
+            "No editor configured",
+            "Please specify one via `$env.config.buffer_editor` or `$env.EDITOR`/`$env.VISUAL`",
+            span,
         ))
     }
 }

@@ -12,22 +12,27 @@ static NEEDS_QUOTING_REGEX: LazyLock<Regex> = LazyLock::new(|| {
         .expect("internal error: NEEDS_QUOTING_REGEX didn't compile")
 });
 
+/// Case-sensitive words that must always be quoted:
+/// `true`/`false`/`null` are active keywords in JSON and NUON, and
+/// `&&` is denied by the nu parser for diagnostics reasons
+/// (<https://github.com/nushell/nushell/pull/7241>).
+fn is_reserved_word(string: &str) -> bool {
+    matches!(string, "true" | "false" | "null" | "&&")
+}
+
+/// Whether `string` has to be written as a quoted string to read back as the same string.
+///
+/// The empty string, the reserved words above, and anything the `NEEDS_QUOTING_REGEX`
+/// pattern matches all need quotes; every other string can be written bare.
 pub fn needs_quoting(string: &str) -> bool {
-    if string.is_empty() {
+    if string.is_empty() || is_reserved_word(string) {
         return true;
     }
-    // These are case-sensitive keywords
-    match string {
-        // `true`/`false`/`null` are active keywords in JSON and NUON
-        // `&&` is denied by the nu parser for diagnostics reasons
-        // (https://github.com/nushell/nushell/pull/7241)
-        "true" | "false" | "null" | "&&" => return true,
-        _ => (),
-    };
     // All other cases are handled here
     NEEDS_QUOTING_REGEX.is_match(string).unwrap_or(false)
 }
 
+/// Writes `string` as a double-quoted string, escaping `"`, `\` and NUL.
 pub fn escape_quote_string(string: &str) -> String {
     let mut output = String::with_capacity(string.len() + 2);
     output.push('"');
@@ -77,7 +82,7 @@ pub fn as_raw_string(s: &str) -> Option<String> {
     let mut hash_count = 1;
     loop {
         let hashes = "#".repeat(hash_count);
-        let closing = format!("'{}", hashes);
+        let closing = format!("'{hashes}");
 
         if !s.starts_with(&hashes) && !s.contains(&closing) {
             return Some(format!("r{hashes}'{s}'{hashes}"));

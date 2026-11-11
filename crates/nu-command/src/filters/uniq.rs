@@ -198,10 +198,13 @@ impl ValueCounter {
     }
 }
 
+/// A copy of `value` with every string, including those nested in lists and records,
+/// case folded. Used as the comparison key for `uniq --ignore-case`.
 fn clone_to_folded_case(value: &Value) -> Value {
     let span = value.span();
     match value {
-        Value::String { val: s, .. } => Value::string(s.clone().to_folded_case(), span),
+        // Folding borrows the string; no need to clone it first.
+        Value::String { val: s, .. } => Value::string(s.to_folded_case(), span),
         Value::List { vals: vec, .. } => {
             Value::list(vec.iter().map(clone_to_folded_case).collect(), span)
         }

@@ -34,14 +34,17 @@ pub trait IgnoreCaseExt {
 }
 
 impl IgnoreCaseExt for str {
+    #[inline]
     fn to_folded_case(&self) -> String {
         UniCase::new(self).to_folded_case()
     }
 
+    #[inline]
     fn eq_ignore_case(&self, other: &str) -> bool {
         UniCase::new(self) == UniCase::new(other)
     }
 
+    #[inline]
     fn cmp_ignore_case(&self, other: &str) -> Ordering {
         UniCase::new(self).cmp(&UniCase::new(other))
     }

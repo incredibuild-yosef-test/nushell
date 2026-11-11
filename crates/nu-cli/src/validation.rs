@@ -6,11 +6,16 @@ use nu_protocol::{
 use reedline::{ValidationResult, Validator};
 use std::sync::Arc;
 
+/// Tells the line editor whether the line typed so far is a complete command.
+///
+/// An incomplete line (for example an unclosed `{`) makes Enter insert a newline
+/// instead of submitting.
 pub struct NuValidator {
     pub engine_state: Arc<EngineState>,
 }
 
 impl Validator for NuValidator {
+    /// Parses `line` in a scratch working set; nothing is added to the engine state.
     fn validate(&self, line: &str) -> ValidationResult {
         let mut working_set = StateWorkingSet::new(&self.engine_state);
         parse(&mut working_set, None, line.as_bytes(), false);

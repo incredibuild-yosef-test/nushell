@@ -151,18 +151,20 @@ fn run(
     operate(action, args, input, call.head, engine_state.signals())
 }
 
+/// Length of `val` in the unit the flags ask for: grapheme clusters, chars, or bytes (the default).
+fn string_length(val: &str, arg: &Arguments) -> usize {
+    if arg.graphemes {
+        val.graphemes(true).count()
+    } else if arg.chars {
+        val.chars().count()
+    } else {
+        val.len()
+    }
+}
+
 fn action(input: &Value, arg: &Arguments, head: Span) -> Value {
     match input {
-        Value::String { val, .. } => Value::int(
-            if arg.graphemes {
-                val.graphemes(true).count()
-            } else if arg.chars {
-                val.chars().count()
-            } else {
-                val.len()
-            } as i64,
-            head,
-        ),
+        Value::String { val, .. } => Value::int(string_length(val, arg) as i64, head),
         Value::Error { .. } => input.clone(),
         _ => Value::error(
             ShellError::OnlySupportsThisInputType {

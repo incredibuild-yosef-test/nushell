@@ -23,7 +23,10 @@ use std::hash::{Hash, Hasher};
 #[debug("{_0:?}")]
 pub struct EnvName(pub(crate) String);
 
-/// All environment variables are case-insensitive on all platforms
+/// All environment variables are case-insensitive on all platforms.
+///
+/// Comparison is ASCII-only, which matches how [`EnvName`] hashes.
+#[inline]
 pub fn env_var_eq(a: &str, b: &str) -> bool {
     a.eq_ignore_ascii_case(b)
 }
@@ -61,7 +64,8 @@ impl EnvName {
         self.0
     }
 
-    /// Get a reference to the inner string
+    /// Get a reference to the inner string, with its original casing
+    #[inline]
     pub fn as_str(&self) -> &str {
         &self.0
     }

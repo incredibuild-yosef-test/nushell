@@ -4,6 +4,7 @@ use std::path::{Component, Prefix};
 
 use crate::AbsolutePathBuf;
 
+/// The current user's home directory, if it is known and is an absolute path.
 pub fn home_dir() -> Option<AbsolutePathBuf> {
     dirs::home_dir().and_then(|home| AbsolutePathBuf::try_from(home).ok())
 }
@@ -54,12 +55,10 @@ pub fn is_windows_device_path(path: &Path) -> bool {
         Path::new("LPT²"),
         Path::new("LPT³"),
     ];
-    if special_paths.contains(&path) {
-        return true;
-    }
-    false
+    special_paths.contains(&path)
 }
 
+/// Device paths only exist on Windows; everywhere else no path is one.
 #[cfg(not(windows))]
 pub fn is_windows_device_path(_path: &Path) -> bool {
     false

@@ -1,54 +1,49 @@
 use nu_utils::escape_quote_string;
 
-fn string_should_be_quoted(input: &str) -> bool {
-    input.is_empty()
-        || input.starts_with('$')
-        || input.chars().any(|c| {
-            c.is_whitespace()
-                || c == '('
-                || c == '['
-                || c == '{'
-                || c == '}'
-                || c == '\''
-                || c == '`'
-                || c == '"'
-                || c == '\\'
-                || c == ';'
-                || c == '|'
-                // `#` starts a comment when it begins a token (or after whitespace).
-                // Without quoting, `nu script.nu #000000` becomes `main #000000` and
-                // the argument is stripped.
-                || c == '#'
-        })
+/// Characters that change how a bare word is parsed, so an argument holding one is quoted.
+///
+/// `#` starts a comment when it begins a token (or after whitespace). Without quoting,
+/// `nu script.nu #000000` becomes `main #000000` and the argument is stripped.
+fn is_special_char(c: char) -> bool {
+    c.is_whitespace()
+        || matches!(
+            c,
+            '(' | '[' | '{' | '}' | '\'' | '`' | '"' | '\\' | ';' | '|' | '#'
+        )
 }
 
-// Escape rules:
-// input argument is not a flag, does not start with $ and doesn't contain special characters, it is passed as it is (foo -> foo)
-// input argument is not a flag and either starts with $ or contains special characters, quotes are added, " and \ are escaped (two \words -> "two \\words")
-// input argument is a flag without =, it's passed as it is (--foo -> --foo)
-// input argument is a flag with =, the first two points apply to the value (--foo=bar -> --foo=bar; --foo=bar' -> --foo="bar'")
-//
-// special characters are white space, (, [, {, }, ', `, ", \, ;, |, and #
-pub fn escape_for_script_arg(input: &str) -> String {
-    // handle for flag, maybe we need to escape the value.
-    if input.starts_with("--") {
-        if let Some((arg_name, arg_val)) = input.split_once('=') {
-            // only want to escape arg_val.
-            let arg_val = if string_should_be_quoted(arg_val) {
-                escape_quote_string(arg_val)
-            } else {
-                arg_val.into()
-            };
+fn string_should_be_quoted(input: &str) -> bool {
+    input.is_empty() || input.starts_with('$') || input.chars().any(is_special_char)
+}
 
-            return format!("{arg_name}={arg_val}");
-        } else {
-            return input.into();
-        }
-    }
+/// `input` as a double-quoted string if it needs quoting, otherwise unchanged.
+fn quote_if_needed(input: &str) -> String {
     if string_should_be_quoted(input) {
         escape_quote_string(input)
     } else {
         input.into()
+    }
+}
+
+/// Escapes a command-line argument so it survives being re-parsed as `main <arg>`.
+///
+/// - Not a flag, no leading `$` and no special characters: passed as is (`foo` -> `foo`).
+/// - Not a flag, and starts with `$` or has a special character: quoted, with `"` and `\`
+///   escaped (`two \words` -> `"two \\words"`).
+/// - A flag without `=`: passed as is (`--foo` -> `--foo`).
+/// - A flag with `=`: the first two rules apply to the value
+///   (`--foo=bar` -> `--foo=bar`; `--foo=bar'` -> `--foo="bar'"`).
+///
+/// Special characters are white space, `(`, `[`, `{`, `}`, `'`, `` ` ``, `"`, `\`, `;`, `|`
+/// and `#`.
+pub fn escape_for_script_arg(input: &str) -> String {
+    if !input.starts_with("--") {
+        return quote_if_needed(input);
+    }
+    // A flag: only its value, if it has one, may need escaping.
+    match input.split_once('=') {
+        Some((arg_name, arg_val)) => format!("{arg_name}={}", quote_if_needed(arg_val)),
+        None => input.into(),
     }
 }
 

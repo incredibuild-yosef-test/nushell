@@ -8,17 +8,14 @@ use nu_protocol::{
 };
 use std::{borrow::Cow, iter, sync::Arc};
 
+/// Runs a math command: applies `mf` to the input values (per column for a table) and
+/// returns the result as pipeline data.
 pub fn run_with_function(
     call: &Call,
     input: PipelineData,
     mf: impl Fn(&[Value], Span, Span) -> Result<Value, ShellError>,
 ) -> Result<PipelineData, ShellError> {
-    let name = call.head;
-    let res = calculate(input, name, mf);
-    match res {
-        Ok(v) => Ok(v.into_pipeline_data()),
-        Err(e) => Err(e),
-    }
+    calculate(input, call.head, mf).map(IntoPipelineData::into_pipeline_data)
 }
 
 fn helper_for_tables(
@@ -34,8 +31,8 @@ fn helper_for_tables(
                 for (key, value) in &**val {
                     column_values
                         .entry(key.clone())
-                        .and_modify(|v: &mut Vec<Value>| v.push(value.clone()))
-                        .or_insert_with(|| vec![value.clone()]);
+                        .or_insert_with(Vec::new)
+                        .push(value.clone());
                 }
             }
             Value::Error { error, .. } => return Err(*error.clone()),

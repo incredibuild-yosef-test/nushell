@@ -42,18 +42,24 @@ fn extract_spread_value(
     }
 }
 
+/// The list after a `...` spread operator (`...[a b]`, `...$list`, `...(expr)`), if any.
+#[inline]
 pub(crate) fn extract_spread_list(spanned: Spanned<&[u8]>) -> Option<Spanned<&[u8]>> {
     extract_spread_value(b'[', spanned)
 }
 
+/// The record after a `...` spread operator (`...{a: 1}`, `...$rec`, `...(expr)`), if any.
+#[inline]
 pub(crate) fn extract_spread_record(spanned: Spanned<&[u8]>) -> Option<Spanned<&[u8]>> {
     extract_spread_value(b'{', spanned)
 }
 
+/// A garbage expression covering `span`, used to keep parsing after an error.
 pub fn garbage(working_set: &mut StateWorkingSet, span: Span) -> Expression {
     Expression::garbage(working_set, span)
 }
 
+/// A pipeline holding one garbage expression that covers all of `spans`.
 pub fn garbage_pipeline(working_set: &mut StateWorkingSet, spans: &[Span]) -> Pipeline {
     Pipeline::from_vec(vec![garbage(working_set, Span::concat(spans))])
 }
@@ -85,6 +91,7 @@ fn is_identifier(bytes: &[u8]) -> bool {
     bytes.iter().all(is_identifier_byte)
 }
 
+/// Whether `bytes` is a variable name, with or without its leading `$`.
 pub fn is_variable(bytes: &[u8]) -> bool {
     match bytes {
         [b'$', var @ ..] | var if !var.is_empty() => is_identifier(var),
@@ -92,6 +99,7 @@ pub fn is_variable(bytes: &[u8]) -> bool {
     }
 }
 
+/// Strips one matching pair of single, double or backtick quotes, if present.
 #[rustfmt::skip]
 pub fn trim_quotes(bytes: &[u8]) -> &[u8] {
     match bytes {

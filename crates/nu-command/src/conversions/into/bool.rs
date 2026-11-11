@@ -144,25 +144,23 @@ fn into_bool(
     operate(action, args, input, call.head, engine_state.signals())
 }
 
+/// Strict string conversion: `true`/`false` in any case and with surrounding
+/// whitespace, or any number (non-zero is `true`). Everything else is an error.
 fn strict_string_to_boolean(s: &str, span: Span) -> Result<bool, ShellError> {
     match s.trim().to_ascii_lowercase().as_str() {
         "true" => Ok(true),
         "false" => Ok(false),
-        o => {
-            let val = o.parse::<f64>();
-            match val {
-                Ok(f) => Ok(f != 0.0),
-                Err(_) => Err(ShellError::CantConvert {
-                    to_type: "boolean".to_string(),
-                    from_type: "string".to_string(),
-                    span,
-                    help: Some(
-                        r#"the strings "true" and "false" can be converted into a bool"#
-                            .to_string(),
-                    ),
-                }),
-            }
-        }
+        number => number
+            .parse::<f64>()
+            .map(|f| f != 0.0)
+            .map_err(|_| ShellError::CantConvert {
+                to_type: "boolean".to_string(),
+                from_type: "string".to_string(),
+                span,
+                help: Some(
+                    r#"the strings "true" and "false" can be converted into a bool"#.to_string(),
+                ),
+            }),
     }
 }
 

@@ -9,6 +9,18 @@ use nu_protocol::{
     engine::{EngineState, Stack},
 };
 
+/// Picks the `WithDebug` or `WithoutDebug` instantiation of an eval function, depending on
+/// whether `engine_state` has a debugger attached.
+macro_rules! with_debugger {
+    ($engine_state:expr, $eval_fn:ident) => {
+        if $engine_state.is_debugging() {
+            $eval_fn::<WithDebug>
+        } else {
+            $eval_fn::<WithoutDebug>
+        }
+    };
+}
+
 /// Type of eval_block() function
 pub type EvalBlockFn =
     fn(&EngineState, &mut Stack, &Block, PipelineData) -> Result<PipelineExecutionData, ShellError>;
@@ -35,59 +47,35 @@ pub type EvalSubexpressionFn =
 /// Helper function to fetch `eval_block()` with the correct type parameter based on whether
 /// engine_state is configured with or without a debugger.
 pub fn get_eval_block(engine_state: &EngineState) -> EvalBlockFn {
-    if engine_state.is_debugging() {
-        eval_block::<WithDebug>
-    } else {
-        eval_block::<WithoutDebug>
-    }
+    with_debugger!(engine_state, eval_block)
 }
 
 /// Helper function to fetch `eval_ir_block()` with the correct type parameter based on whether
 /// engine_state is configured with or without a debugger.
 pub fn get_eval_ir_block(engine_state: &EngineState) -> EvalIrBlockFn {
-    if engine_state.is_debugging() {
-        eval_ir_block::<WithDebug>
-    } else {
-        eval_ir_block::<WithoutDebug>
-    }
+    with_debugger!(engine_state, eval_ir_block)
 }
 
 /// Helper function to fetch `eval_block_with_early_return()` with the correct type parameter based
 /// on whether engine_state is configured with or without a debugger.
 pub fn get_eval_block_with_early_return(engine_state: &EngineState) -> EvalBlockWithEarlyReturnFn {
-    if engine_state.is_debugging() {
-        eval_block_with_early_return::<WithDebug>
-    } else {
-        eval_block_with_early_return::<WithoutDebug>
-    }
+    with_debugger!(engine_state, eval_block_with_early_return)
 }
 
 /// Helper function to fetch `eval_expression()` with the correct type parameter based on whether
 /// engine_state is configured with or without a debugger.
 pub fn get_eval_expression(engine_state: &EngineState) -> EvalExpressionFn {
-    if engine_state.is_debugging() {
-        eval_expression::<WithDebug>
-    } else {
-        eval_expression::<WithoutDebug>
-    }
+    with_debugger!(engine_state, eval_expression)
 }
 
 /// Helper function to fetch `eval_expression_with_input()` with the correct type parameter based
 /// on whether engine_state is configured with or without a debugger.
 pub fn get_eval_expression_with_input(engine_state: &EngineState) -> EvalExpressionWithInputFn {
-    if engine_state.is_debugging() {
-        eval_expression_with_input::<WithDebug>
-    } else {
-        eval_expression_with_input::<WithoutDebug>
-    }
+    with_debugger!(engine_state, eval_expression_with_input)
 }
 
 /// Helper function to fetch `eval_subexpression()` with the correct type parameter based on whether
 /// engine_state is configured with or without a debugger.
 pub fn get_eval_subexpression(engine_state: &EngineState) -> EvalSubexpressionFn {
-    if engine_state.is_debugging() {
-        eval_subexpression::<WithDebug>
-    } else {
-        eval_subexpression::<WithoutDebug>
-    }
+    with_debugger!(engine_state, eval_subexpression)
 }
