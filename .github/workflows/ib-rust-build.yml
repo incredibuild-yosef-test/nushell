@@ -2,9 +2,10 @@
 #
 # Run it from the Actions tab ("Run workflow"). Incredibuild is switched ON or OFF in the ICA
 # dashboard (hosted grid "Use Incredibuild"), not here: this workflow only builds and reports
-# which mode actually ran. It never clears the Incredibuild cache, and it uses no GitHub
-# Actions cache and no Cargo target cache: target/ is deleted before the timed build, so every
-# run compiles the whole selected workload. Dependency downloads (cargo fetch) are not timed.
+# which mode actually ran. It never clears the Incredibuild cache and uses no GitHub Actions
+# cache. target/ is NOT deleted before the build, so Cargo reuses whatever target/ the job
+# workspace already holds (the "Cargo target dir at start" line reports it). Dependency
+# downloads (cargo fetch) are not timed.
 name: IB Rust build (manual)
 
 on:
@@ -70,7 +71,8 @@ jobs:
           SQL=/opt/incredibuild/bin/sqlite3
           AGG=/etc/incredibuild/db/incredibuildBuildReport.db
           maxbid() { [ -s "$AGG" ] && "$SQL" "$AGG" 'SELECT IFNULL(MAX(BuildId),0) FROM build_history;' 2>/dev/null || echo 0; }
-          rm -rf target
+          tstart=$([ -d target ] && echo "present, $(du -sm target | cut -f1) MB" || echo absent)
+          echo "Cargo target dir at start: $tstart"
           b0=$(maxbid); t0=$(date +%s.%N)
           cargo --config .cargo/ci.toml build $TARGETS --profile ci --locked -v > "$DIAG_DIR/build.log" 2>&1; rc=$?
           t1=$(date +%s.%N); b1=$(maxbid)
@@ -100,6 +102,7 @@ jobs:
             echo "| --- | --- |"
             echo "| Build time | **${wall} s** (${mins}) |"
             echo "| Exit code | $rc |"
+            echo "| Cargo target dir at start | $tstart |"
             echo "| Incredibuild | **$mode** |"
             echo "| Incredibuild stats | $stats |"
             echo "| Crates compiled | $(grep -c '^ *Compiling ' "$DIAG_DIR/build.log") |"
