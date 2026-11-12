@@ -1,0 +1,210 @@
+# TEMPORARY same-VM benchmark (2026-11-12). Runs only on pushes to ib-bench/same-vm.
+# One GitHub job = one fresh Namespace runner VM (local ICA), two real nushell builds on it:
+# Build 1 = old commit 2653ee4, Build 2 = new commit 9f58f2a (30 Rust changes), Cargo target/ and the
+# Incredibuild cache kept between them. The VM's first mode comes from this repo's ICA setting
+# (nushell = ON, nushell-ib-off = OFF); the second mode is switched inside the job, the way runner
+# start-up does it. Caches start empty on purpose: Incredibuild uses a new empty directory on the VM's
+# local disk and Cargo a new empty CARGO_HOME, so the repo's existing Namespace cache volume is neither
+# used nor modified. The `yosef-test` marker lives in the runner's local workspace (not on the volume).
+name: IB same-VM benchmark
+
+on:
+  push:
+    branches:
+      - ib-bench/same-vm
+
+permissions:
+  contents: read
+
+env:
+  OLD: 2653ee4f7c76862b67e0e49f7d8e65bf747c5bc3
+  NEW: 9f58f2aeda443155f4b4c4656d0e69941013a1f1
+  CARGO_TERM_COLOR: never
+  IB_ACCEL_DEBUG: "1"
+
+jobs:
+  vm:
+    name: ${{ matrix.vm }}
+    runs-on: incredibuild-ubuntu-2404
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      matrix:
+        vm: ${{ fromJSON(github.repository == 'incredibuild-yosef-test/nushell' && '["VM1-ON-OFF","VM4-ON-ON"]' || '["VM2-OFF-ON","VM3-OFF-OFF"]') }}
+    steps:
+      - name: Checkout benchmark files (workflow + profile only)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/ib-bench
+          path: benchfiles
+
+      - name: VM identity, start mode, empty caches, marker absent
+        shell: bash
+        run: |
+          set -euo pipefail
+          VM="${{ matrix.vm }}"; M1=$(echo "$VM" | cut -d- -f2); M2=$(echo "$VM" | cut -d- -f3)
+          D="$RUNNER_TEMP/bench"; mkdir -p "$D"
+          MARK="$RUNNER_WORKSPACE/yosef-test"
+          VMID="${NSC_VM_ID:-${NSC_INSTANCE_ID:-}}"
+          { echo "VM=$VM"; echo "M1=$M1"; echo "M2=$M2"; echo "D=$D"; echo "MARK=$MARK"; echo "SRC=$RUNNER_WORKSPACE/src"
+            echo "CARGO_HOME=/home/runner/cargo-home-bench"; echo "IBC=/home/runner/ibcache-bench"
+            echo "VMID=${VMID:-not-exposed}"; echo "HOSTN=$(hostname)"; echo "BOOTID=$(cat /proc/sys/kernel/random/boot_id)"; } >> "$GITHUB_ENV"
+          echo "=== $VM on runner $RUNNER_NAME"
+          echo "Namespace VM ID (NSC_VM_ID): ${VMID:-not exposed inside the runner}"
+          echo "hostname: $(hostname)   boot_id: $(cat /proc/sys/kernel/random/boot_id)   uptime: $(cut -d' ' -f1 /proc/uptime)s"
+          echo "cpus=$(nproc) mem=$(free -m | awk '/Mem/{print $2}')MB  ICA start mode: $([ -n "${IB_CONSOLE_SKIP:-}" ] && echo OFF || echo ON) (expected $M1)"
+          if [ -e "$MARK" ]; then echo "::error::yosef-test marker already exists before Build 1: $(cat "$MARK")"; exit 1; fi
+          echo "MARKER ABSENT ($MARK)"
+
+      - name: Fetch the two commits (not timed)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$SRC" && cd "$SRC"
+          git init -q . && git remote add origin "https://github.com/${{ github.repository }}.git"
+          git fetch -q --depth 2 origin "$NEW"
+          git cat-file -e "$OLD^{commit}" && git cat-file -e "$NEW^{commit}"
+          echo "old..new: $(git diff --stat "$OLD" "$NEW" | tail -1)"
+
+      - name: Prepare empty caches and Build 1 mode
+        shell: bash
+        run: |
+          set -euo pipefail
+          IBCTL="sudo /opt/incredibuild/etc/init.d/incredibuild"
+          mkdir -p "$CARGO_HOME"
+          # Incredibuild cache -> a new, empty directory on local disk (the volume's cache is left untouched).
+          ib_use_empty_cache() { $IBCTL stop >/dev/null 2>&1 || true; mkdir -p "$IBC"; sudo ln -sfn "$IBC" /ib-workspace/incredibuild/cache; $IBCTL restart >/dev/null 2>&1; sleep 3; }
+          if [ "$M1" = ON ]; then
+            [ -n "${IB_CONSOLE_SKIP:-}" ] && { echo "::error::expected an ON runner"; exit 1; }
+            ib_use_empty_cache
+          else
+            [ -z "${IB_CONSOLE_SKIP:-}" ] && { echo "::error::expected an OFF runner"; exit 1; }
+          fi
+          echo "Cargo target/: $([ -d "$SRC/target" ] && echo PRESENT || echo absent)"
+          echo "Cargo home ($CARGO_HOME): $(find "$CARGO_HOME" -type f | wc -l) files"
+          C=$(readlink -f /ib-workspace/incredibuild/cache)
+          echo "Incredibuild cache dir: $C -> $(find "$C" -type f 2>/dev/null | wc -l) files ($( [ "$M1" = ON ] && echo 'new empty dir; IB writes its ccache.conf' || echo 'IB not running'))"
+          echo "ib_server running: $(pgrep -x ib_server >/dev/null && echo yes || echo no)"
+
+      - name: Write the build-and-measure script
+        shell: bash
+        run: |
+          cat > "$D/build.sh" <<'EOS'
+          #!/bin/bash
+          # build.sh <n> <commit> <expected mode>
+          set -u
+          N=$1; COMMIT=$2; WANT=$3; L="$D/build$N"
+          SQL=/opt/incredibuild/bin/sqlite3; AGG=/etc/incredibuild/db/incredibuildBuildReport.db
+          maxbid() { [ -s "$AGG" ] && "$SQL" "$AGG" 'SELECT IFNULL(MAX(BuildId),0) FROM build_history;' 2>/dev/null || echo 0; }
+          ibstat() { local c; c=$(readlink -f /ib-workspace/incredibuild/cache); echo "$(find "$c" -type f 2>/dev/null | wc -l) $(du -sm "$c" 2>/dev/null | cut -f1)"; }
+          tgt() { [ -d "$SRC/target" ] && du -sm "$SRC/target" | cut -f1 || echo 0; }
+          cd "$SRC" && git checkout -q "$COMMIT" && [ "$(git rev-parse HEAD)" = "$COMMIT" ] || { echo "checkout failed"; exit 2; }
+          cargo fetch --locked > "$L.fetch.log" 2>&1
+          read -r IBF0 IBM0 <<< "$(ibstat)"; T0B=$(tgt); B0=$(maxbid)
+          IBSRV=$(pgrep -x ib_server >/dev/null && echo yes || echo no)
+          ( while :; do pgrep -x ib_console; sleep 1; done ) > "$L.ps.txt" 2>/dev/null & SAMP=$!
+          t0=$(date +%s.%N)
+          cargo --config .cargo/ci.toml build --workspace --profile ci --locked -v > "$L.build.log" 2>&1; RC=$?
+          t1=$(date +%s.%N); kill $SAMP 2>/dev/null; wait $SAMP 2>/dev/null
+          B1=$(maxbid); read -r IBF1 IBM1 <<< "$(ibstat)"; T1B=$(tgt)
+          WALL=$(awk -v a="$t0" -v b="$t1" 'BEGIN{printf "%.1f", b-a}'); MIN=$(awk -v w="$WALL" 'BEGIN{printf "%dm%02ds", int(w/60), int(w)%60}')
+          SHIM=$(grep -m1 '^\[ib-accel\] Final:' "$L.build.log" | cut -c1-110)
+          IBRAN=no; [ "$B1" != "$B0" ] && IBRAN=yes
+          ACT=OFF; [ "$IBRAN" = yes ] && ACT=ON
+          COMP=$(grep -c '^ *Compiling ' "$L.build.log"); FRESH=$(grep -c '^ *Fresh ' "$L.build.log"); RUSTC=$(grep -c 'Running `.*rustc ' "$L.build.log")
+          grep -oE '^ *Compiling [^ ]+ v[^ ]+' "$L.build.log" | sed 's/^ *Compiling //' | sort > "$L.compiled-crates.txt"
+          TOT=-; HIT=-; MISS=-; RATE=-; IBX=-
+          if [ "$IBRAN" = yes ]; then
+            read -r TOT HIT IBX <<< "$(python3 - "$B1" <<'PY'
+          import os, sqlite3, sys
+          b = sys.argv[1]
+          con = sqlite3.connect(f"file:/etc/incredibuild/db/incredibuildBuildReport_{b}.db?mode=ro", uri=True)
+          cols = [r[1] for r in con.execute(f'PRAGMA table_info("build_{b}_cache_stats")')]
+          d = dict(zip(cols, con.execute(f'SELECT * FROM "build_{b}_cache_stats"').fetchone() or []))
+          pc = [r[1] for r in con.execute(f'PRAGMA table_info("build_{b}_process_partial")')]
+          n = sum(1 for r in con.execute(f'SELECT * FROM "build_{b}_process_partial"') if os.path.basename(str(dict(zip(pc, r))["ProcessName"])) == "rustc")
+          print(d.get("ib_cache_total") or 0, d.get("ib_cache_hits") or 0, n)
+          PY
+          )"; MISS=$((TOT-HIT)); RATE=$(awk -v h="$HIT" -v t="$TOT" 'BEGIN{ if (t>0) printf "%.1f%%", 100*h/t; else print "n/a"}')
+          fi
+          OK=$([ "$ACT" = "$WANT" ] && echo yes || echo "NO (expected $WANT)")
+          printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$VM" "$N" "$COMMIT" "$WANT" "$ACT" "$RC" "$WALL" "$MIN" "$TOT" "$HIT" "$MISS" "$RATE" "$IBF0/${IBM0}MB" "$IBF1/${IBM1}MB" "$T0B" "$T1B" "$COMP" "$FRESH" "$RUSTC" "$IBX" >> "$D/results.tsv"
+          {
+            echo "### $VM — Build $N (${COMMIT:0:7}), mode $ACT"
+            echo "| Item | Value |"; echo "| --- | --- |"
+            echo "| Runner / VM | $RUNNER_NAME / Namespace VM ID: $VMID / host $HOSTN / boot_id $BOOTID |"
+            echo "| Commit | \`$COMMIT\` |"
+            echo "| Incredibuild (expected / actual / matches) | $WANT / $ACT ($( [ "$IBRAN" = yes ] && echo "BuildId $B0→$B1" || echo 'BuildId unchanged')) / $OK |"
+            echo "| ib_server before build | $IBSRV |"
+            echo "| **Build time** | **${WALL} s ($MIN)**, exit code $RC |"
+            echo "| IB cache hits / misses / hit rate | $HIT / $MISS / $RATE (cacheable $TOT, rustc run under IB $IBX) |"
+            echo "| IB cache before → after | $IBF0 files/${IBM0} MB → $IBF1 files/${IBM1} MB |"
+            echo "| Cargo target/ before → after | ${T0B} MB → ${T1B} MB |"
+            echo "| Cargo: compiled / up to date / rustc runs | $COMP / $FRESH / $RUSTC |"
+            echo "| Wrapper decision | \`$SHIM\` |"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          tail -2 "$L.build.log"
+          exit $RC
+          EOS
+          chmod +x "$D/build.sh"
+
+      - name: "Build 1 — old commit"
+        shell: bash
+        run: |
+          if [ "$M1" = OFF ]; then export IB_CONSOLE_SKIP=1; else unset IB_CONSOLE_SKIP; fi
+          "$D/build.sh" 1 "$OLD" "$M1"
+
+      - name: "Marker: write yosef-test (same VM proof)"
+        shell: bash
+        run: |
+          printf 'vm_id=%s\nhostname=%s\nboot_id=%s\nrunner=%s\njob=%s\nwritten_at=%s\n' "$VMID" "$(hostname)" "$(cat /proc/sys/kernel/random/boot_id)" "$RUNNER_NAME" "$GITHUB_JOB/${{ matrix.vm }}" "$(date -u +%FT%TZ)" > "$MARK"
+          echo "marker written after Build 1:"; cat "$MARK"
+
+      - name: Switch mode for Build 2 (same VM, caches kept)
+        shell: bash
+        run: |
+          set -euo pipefail
+          IBCTL="sudo /opt/incredibuild/etc/init.d/incredibuild"
+          if [ "$M1" = ON ] && [ "$M2" = OFF ]; then
+            $IBCTL stop >/dev/null 2>&1 || true; sleep 2
+            echo "IB_CONSOLE_SKIP=1" >> "$GITHUB_ENV"
+            echo "switched ON -> OFF: ib_server stopped; IB cache kept ($(find "$IBC" -type f | wc -l) files)"
+          elif [ "$M1" = OFF ] && [ "$M2" = ON ]; then
+            # What runner start-up does for an ON job: deliver the profile, run job_started.sh, then use an empty local IB cache.
+            sudo cp benchfiles/.github/ib-bench/ib_profile.xml /ib-workspace/incredibuild/ib_profile.xml
+            sudo cp benchfiles/.github/ib-bench/ib_profile.xml /ib-workspace/cache/ib_profile.xml
+            sudo env -u IB_CONSOLE_SKIP IB_SKIP_INSTALL=1 IB_INSTALL_DIR=/ib-workspace/incredibuild bash /ib-workspace/incredibuild/hooks/job_started.sh > "$D/switch-on-hook.log" 2>&1
+            $IBCTL stop >/dev/null 2>&1 || true; mkdir -p "$IBC"; sudo ln -sfn "$IBC" /ib-workspace/incredibuild/cache; $IBCTL restart >/dev/null 2>&1; sleep 3
+            echo "IB_CONSOLE_SKIP=" >> "$GITHUB_ENV"
+            echo "switched OFF -> ON: ib_server $(pgrep -x ib_server >/dev/null && echo running || echo NOT running); profile $([ -f /etc/default/ib_profile.xml ] && echo installed || echo MISSING); IB cache $(readlink -f /ib-workspace/incredibuild/cache)"
+          else
+            echo "no switch: Build 2 stays $M2"
+          fi
+          echo "Cargo target/ kept: $(du -sm "$SRC/target" | cut -f1) MB"
+
+      - name: "Marker check before Build 2"
+        shell: bash
+        run: |
+          [ -f "$MARK" ] || { echo "::error::MARKER MISSING before Build 2"; exit 1; }
+          cat "$MARK"
+          grep -qx "vm_id=$VMID" "$MARK" && grep -qx "hostname=$(hostname)" "$MARK" && grep -qx "boot_id=$(cat /proc/sys/kernel/random/boot_id)" "$MARK" \
+            || { echo "::error::marker does not match this VM (vm_id/hostname/boot_id differ)"; exit 1; }
+          echo "MARKER FOUND — same VM: vm_id=$VMID hostname=$(hostname) boot_id=$(cat /proc/sys/kernel/random/boot_id)"
+
+      - name: "Build 2 — new commit (30 Rust changes)"
+        shell: bash
+        run: |
+          if [ "$M2" = OFF ]; then export IB_CONSOLE_SKIP=1; else unset IB_CONSOLE_SKIP; fi
+          "$D/build.sh" 2 "$NEW" "$M2"
+
+      - name: Upload logs and results
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: ib-same-vm-${{ matrix.vm }}
+          path: |
+            ${{ runner.temp }}/bench/*.tsv
+            ${{ runner.temp }}/bench/*.log
+            ${{ runner.temp }}/bench/*.txt
+          retention-days: 30

@@ -1,0 +1,286 @@
+<ib_profile version="1">
+<!--
+	Configuration files read and processed in the following order:
+	1. profile specified on the command line
+	2. $PWD/ib_profile.xml
+	3. $HOME/.ib/ib_profile.xml
+	4. /etc/default/ib_profile.xml
+	5. /opt/incredibuild/data/ib_profile.xml
+
+	Each file can only add to the previous definitions, but can't overwrite them.
+	I.e. profile specified on the command line has highest priority, $PWD/ib_profile.xml - next
+	and so on.
+
+	These ib_profile.xml files will be read and processed in the above order,
+	until the first occurrence of ib_profile.xml that contains
+	ignore_following_profiles="true",
+	which will make it the last ib_profile.xml to be processed.
+
+	/opt/incredibuild/data/ib_profile.xml SHOULD NOT BE CHANGED -
+	ALL CHANGES WILL BE LOST AFTER UPGRADE
+-->
+	<globals
+		ignore_following_profiles="false"
+		dummy_mode="false"
+		monitor_enable="false"
+		local_slot_priority="low"
+		requested_cores="10000"
+	/>
+	<processes>
+		<process filename="acp"                   type="intercepted" />
+		<process filename="awk"                   type="intercepted" />
+		<process filename="bash"                  type="intercepted" />
+		<process filename="basename"              type="intercepted" />
+		<process filename="bzip2"                 type="intercepted" />
+		<process filename="cat"                   type="intercepted" />
+		<process filename="ccache"                type="intercepted" />
+		<process filename="checkpolicy"           type="intercepted" />
+		<process filename="chmod"                 type="intercepted" />
+		<process filename="conf"                  type="intercepted" />
+		<process filename="cp"                    type="intercepted" />
+		<process filename="cpio"                  type="intercepted" />
+		<process filename="csh"                   type="intercepted" />
+		<process filename="cut"                   type="intercepted" />
+		<process filename="dash"                  type="intercepted" />
+		<process filename="date"                  type="intercepted" />
+		<process filename="diff"                  type="intercepted" />
+		<process filename="dirname"               type="intercepted" />
+		<process filename="dnsdomainname"         type="intercepted" />
+		<process filename="egrep"                 type="intercepted" />
+		<process filename="env"                   type="intercepted" />
+		<process filename="expr"                  type="intercepted" />
+		<process filename="echo"                  type="intercepted" />
+		<process filename="find"                  type="intercepted" />
+		<process filename="gawk"                  type="intercepted" />
+		<process filename="git"                   type="intercepted" />
+		<process filename="git-remote"            type="intercepted" />
+		<process filename="git-remote-ext"        type="intercepted" />
+		<process filename="git-remote-fd"         type="intercepted" />
+		<process filename="git-remote-ftp"        type="intercepted" />
+		<process filename="git-remote-ftps"       type="intercepted" />
+		<process filename="git-remote-http"       type="intercepted" />
+		<process filename="git-remote-https"      type="intercepted" />
+		<process filename="git-upload-pack"       type="intercepted" />
+		<process filename="grep"                  type="intercepted" />
+		<process filename="gperf"                 type="intercepted" />
+		<process filename="gzip"                  type="intercepted" />
+		<process filename="groupadd"              type="intercepted" />
+		<process filename="head"                  type="intercepted" />
+		<process filename="hostname"              type="intercepted" />
+		<process filename="ksh"                   type="intercepted" />
+		<process filename="less"                  type="intercepted" />
+		<process filename="ls"                    type="intercepted" />
+		<process filename="lsof"                  type="intercepted" />
+		<process filename="lspci"                 type="intercepted" />
+		<process filename="lsusb"                 type="intercepted" />
+		<process filename="ld"                    type="intercepted" />
+		<process filename="ldconfig"              type="intercepted" />
+		<process filename="libtool"               type="intercepted" />
+		<process filename="mkdir"                 type="intercepted" />
+		<process filename="mv"                    type="intercepted" />
+		<process filename="more"                  type="intercepted" />
+		<process filename="netstat"               type="intercepted" />
+		<process filename="perl"                  type="intercepted" />
+		<process filename="pkgdata"               type="intercepted" />
+		<process filename="print"                 type="intercepted" />
+		<process filename="pwd"                   type="intercepted" />
+		<process filename="python"                type="intercepted" />
+		<process filename="python2.7"             type="intercepted" />
+		<process filename="python3"               type="intercepted" />
+		<process filename="rm"                    type="intercepted" />
+		<process filename="file" recursive="true" type="intercepted" />
+		<process filename="readlink" recursive="true" type="intercepted" />
+		<process filename="ruby"                  type="intercepted" />
+		<process filename="ruby_executable_hooks" type="intercepted" />
+		<process filename="sed"                   type="intercepted" />
+		<process filename="sh"                    type="intercepted" />
+		<process filename="sort"                  type="intercepted" />
+		<process filename="tar"                   type="intercepted" />
+		<process filename="tail"                  type="intercepted" />
+		<process filename="tcsh"                  type="intercepted" />
+		<process filename="tee"                   type="intercepted" />
+		<process filename="touch"                 type="intercepted" />
+		<process filename="tput"                  type="intercepted" />
+		<process filename="tr"                    type="intercepted" />
+		<process filename="uname"                 type="intercepted" />
+		<process filename="uniq"                  type="intercepted" />
+		<process filename="unzip"                 type="intercepted" />
+		<process filename="which"                 type="intercepted" />
+		<process filename="who"                   type="intercepted" />
+		<process filename="xargs"                 type="intercepted" />
+		<process filename="yes"                   type="intercepted" />
+		<process filename="zip"                   type="intercepted" />
+		<process filename="sudo"                  type="local_only" />
+
+		<!-- build tools -->
+		<process filename="b2"                    type="intercepted" />
+		<process filename="bootstrap"             type="intercepted" />
+		<process filename="cpack"                 type="intercepted" />
+		<process filename="waf"                   type="intercepted" />
+		<process filename="make"                  type="intercepted" />
+		<process filename="cmake"                 type="intercepted" />
+		<process filename="cmake.real"            type="intercepted" />
+		<process filename="cmake3"                type="intercepted" />
+		<process filename="dmake"                 type="intercepted" />
+		<process filename="gmake"                 type="intercepted" />
+		<process filename="gradle"                type="intercepted" />
+		<process filename="gradlew"               type="intercepted" />
+		<process filename="qmake"                 type="intercepted" />
+		<process filename="scons"                 type="intercepted" />
+		<process filename="drake"                 type="intercepted" />
+		<process filename="rake"                  type="intercepted" />
+		<process filename="ninja"                 type="intercepted" />
+		<process filename="ninja.real"            type="intercepted" />
+		<process filename="ninja-linux64"         type="intercepted" />
+		<process filename="makeparallel"          type="intercepted" />
+		<process filename="mvnw"                  type="intercepted" />
+		<process filename="mvn"                   type="intercepted" />
+		<process filename="jspawnhelper"          type="intercepted" />
+		<!-- parsers   -->
+		<process filename="bison"                 type="allow_remote" />
+		<process filename="lex"                   type="allow_remote" />
+		<process filename="flex"                  type="allow_remote" />
+		<process filename="yacc"                  type="allow_remote" />
+
+
+		<!-- compilers -->
+		<process filename="c++"           type="local_only" exclude_args="-c:-S:-E" cached="true" />
+		<process filename="cc"            type="local_only" exclude_args="-c:-S:-E" cached="true" />
+		<process filename="cc1"           type="local_only" exclude_args="-c:-S:-E" cached="true" />
+		<process filename="cc1plus"       type="local_only" exclude_args="-c:-S:-E" cached="true" />
+		<process filename="clang"         type="local_only" exclude_args="-c:-S:-E" cached="true" />
+		<process filename="clang++"       type="local_only" exclude_args="-c:-S:-E" cached="true" />
+		<process filename="g++"           type="local_only" exclude_args="-c:-S:-E" cached="true" />
+		<process filename="gcc"           type="local_only" exclude_args="-c:-S:-E" cached="true" />
+		<process filename="icc"           type="local_only" exclude_args="-c:-S:-E" cached="true" />
+		<process filename="icpc"          type="local_only" exclude_args="-c:-S:-E" cached="true" />
+		<process filename="xg++"          type="local_only" exclude_args="-c:-S:-E" cached="true" />
+		<process filename="xgcc"          type="local_only" exclude_args="-c:-S:-E" cached="true" />
+		<process filename="qcc"           type="local_only" exclude_args="-c:-S:-E" cached="true" />
+		<process filename="q++"           type="local_only" exclude_args="-c:-S:-E" cached="true" />
+
+		<!--Rust-->
+		<process filename="cargo"         type="intercepted" />
+		<process filename="rustc"         type="allow_remote" exclude_args="--version:-vV:build_script_build:build_script_main"> <ib_cache enabled="true" /> </process>
+
+		<!-- nvidia cuda  -->
+		<process filename="nvcc"          type="local_only" exclude_args="-c:-S:-E" cached="true" />
+		<process filename="mpicxx"        type="intercepted"  />
+		<process filename="cudafe"        type="allow_remote" />
+		<process filename="cudafe++"      type="allow_remote" />
+		<process filename="cicc"          type="allow_remote" />
+		<process filename="ptxas"         type="allow_remote" />
+
+		<!-- open office  -->
+		<process filename="unoidl"        type="allow_remote" />
+		<process filename="cppumaker"     type="allow_remote" />
+		<process filename="cunomaker"     type="allow_remote" />
+		<process filename="javamaker"     type="allow_remote" />
+		<process filename="rdbmaker"      type="allow_remote" />
+
+		<!-- Linux kernel -->
+		<process filename="fixdep"          type="local_only" />
+		<process filename="genksyms"        type="intercepted" />
+		<process filename="objtool"         type="local_only" />
+		<process filename="pahole"          type="allow_remote" />
+
+		<!-- qt -->
+		<process filename="moc"           type="allow_remote" />
+
+		<!-- compilers -->
+		<!--
+		  The entries below show IncrediBuild's support for POSIX Extended regular expressions
+		  For futher information on supported regular expressions see 'man 7 regex'
+		-->
+		<process filename="-c[+][+]$" regex="true" type="local_only" exclude_args="-c:-S:-E" cached="true" />
+		<process filename="-cc1$"     regex="true" type="local_only" exclude_args="-c:-S:-E" cached="true" />
+		<process filename="-cc1plus$" regex="true" type="local_only" exclude_args="-c:-S:-E" cached="true" />
+		<process filename="-g[+][+]$" regex="true" type="local_only" exclude_args="-c:-S:-E" cached="true" />
+		<process filename="-gcc$"     regex="true" type="local_only" exclude_args="-c:-S:-E" cached="true" />
+		<process filename="-clang[+][+]$" regex="true" type="local_only" exclude_args="-c:-S:-E" cached="true" />
+		<process filename="-clang$" regex="true" type="local_only" exclude_args="-c:-S:-E" cached="true" />
+		<process filename="clang-[0-9]+" regex="true" type="local_only" exclude_args="-c:-S:-E" cached="true" />
+		<process filename="clang\+\+-[0-9]+" regex="true" type="local_only" exclude_args="-c:-S:-E" cached="true" />
+		<!-- yocto (versions 2.3-3.4), AGL (version 12.1) -->
+		<process filename="wget"                                               type="intercepted" />
+		<process filename="ssh"                                                type="intercepted" />
+		<process filename="bitbake"                                            type="intercepted" />
+		<process filename="bitbake-worker"                                     type="intercepted" />
+		<process filename="pseudo"                                             type="intercepted" />
+		<process filename="initial_sstate_postinst"                            type="intercepted" />
+		<process filename="glibcinitial_sstate_postinst"                       type="intercepted" />
+		<process filename="sstate_hardcode_path_unpack"                        type="intercepted" />
+		<process filename="^run.do_populate"                  regex="true"     type="intercepted" />
+		<process filename="do_install"                        regex="true"     type="intercepted" />
+		<process filename="do_fetch"                          regex="true"     type="intercepted" />
+		<process filename="do_patch"                          regex="true"     type="intercepted" />
+		<process filename="do_unpack"                         regex="true"     type="intercepted" />
+		<process filename="^miniperl"                         regex="true"     type="intercepted" />
+		<process filename="python3.9"                         regex="true"     type="intercepted" />
+		<process filename="xz"                                                 type="intercepted" />
+		<process filename="gpg-error-config-test.sh"                           type="allow_remote" />
+		<process filename="gpgrt-config$"                     regex="true"     type="allow_remote" />
+		<process filename="meson"                                              type="intercepted" />
+		<process filename="-libtool$"                         regex="true"     type="intercepted" />
+		<process filename="g-ir-scanner"                      regex="true"     type="intercepted" />
+		<process filename="g-ir-compiler"                     regex="true"     type="intercepted" />
+		<process filename="join"                                               type="intercepted" />
+		<process filename="eccdata"                                            type="allow_remote" />
+		<process filename="m4-ccas"                           regex="true"     type="allow_remote" />
+		<process filename="m4$"                               regex="true"     type="allow_remote" />
+		<process filename="scc"                                                type="allow_remote" />
+		<process filename="spp"                                                type="allow_remote" />
+		<process filename="genattrtab"                                         type="allow_remote" />
+		<process filename="genoutput"                                          type="allow_remote" />
+		<process filename="genautomata"                                        type="allow_remote" />
+		<process filename="genconfig"                                          type="allow_remote" />
+		<process filename="gentarget-def"                                      type="allow_remote" />
+		<process filename="merge_config.sh"                                    type="allow_remote" />
+		<process filename="^run.[^d]"                         regex="true"     type="local_only" />
+		<process filename="^run.do_populate"                  regex="true"     type="local_only" />
+		<process filename="^run.do_deploy"                    regex="true"     type="local_only" />
+		<process filename="^run.do_kernel"                    regex="true"     type="local_only" />
+		<process filename="^run.do_image"                     regex="true"     type="local_only" />
+		<process filename="^run.do_package_"                  regex="true"   recursive="true"  type="intercepted" />
+		<process filename="^run.do_packagedata"               regex="true"     type="local_only" />
+		<process filename="^run.do_compile"                   regex="true"     type="intercepted" />
+		<process filename="glib-compile-resources"                             type="intercepted" />
+		<process filename="^run.sstate_create_package"        regex="true"     type="intercepted" />
+		<process filename="^run.do_configure"                 regex="true"   recursive="true"  type="intercepted" />
+		<process filename="conftest"                      recursive="true"     type="intercepted" />
+		<process filename="quilt"                                              type="local_only" />
+		<process filename="chrpath"                                            type="local_only" />
+		<process filename="do_rootfs"                         regex="true"     type="local_only" />
+		<!--rootfs related-->
+		<process filename="groupmems"                                          type="intercepted"/>
+		<process filename="postinst"   regex="true"    recursive="true"        type="intercepted"/>
+		<process filename="passwd"     regex="true"    recursive="true"        type="intercepted"/>
+		<process filename="useradd"    regex="true"    recursive="true"        type="intercepted"/>
+		<process filename="usermod"    regex="true"    recursive="true"        type="intercepted"/>
+
+		<!--android common-->
+		<process filename="aidl"             type="allow_remote" />
+		<process filename="java"             type="allow_remote" />
+		<process filename="javac"            type="allow_remote" />
+		<process filename="jar"              type="allow_remote" />
+
+		<!--android 7 and 8-->
+		<process filename="jack-admin"		type="intercepted" />
+
+		<!--android 8-->
+		<process filename="soong_ui.bash"	type="intercepted" />
+		<process filename="proguard.sh"		type="allow_remote" />
+		<process filename="dx"				type="allow_remote" />
+		<process filename="aapt2"			type="local_only"		exclude_args="compile" />
+
+		<!--bazel-->
+		<process filename="^bazel"           regex="true"    type="intercepted" />
+		<process filename="process-wrapper"                  type="intercepted" />
+		<!--bazel 0.24 -->
+		<process filename="daemonize"             type="intercepted" />
+		<process filename="linux-sandbox"         type="intercepted" />
+
+		<!--buildroot -->
+		<process filename="psize.aux"        type="intercepted" />
+	</processes>
+</ib_profile>
