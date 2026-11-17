@@ -82,7 +82,7 @@ jobs:
   sha256sum:
     needs: release
     name: Create Sha256sum
-    runs-on: ubuntu-latest
+    runs-on: incredibuild-ubuntu-latest
     steps:
     - name: Download Release Archives
       env:

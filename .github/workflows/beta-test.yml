@@ -32,7 +32,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        platform: [windows-latest, macos-latest, ubuntu-22.04]
+        platform: [windows-latest, macos-latest, incredibuild-ubuntu-2204]
 
     runs-on: ${{ matrix.platform }}
 

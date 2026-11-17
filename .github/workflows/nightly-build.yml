@@ -27,7 +27,7 @@ defaults:
 jobs:
   prepare:
     name: Prepare
-    runs-on: ubuntu-latest
+    runs-on: incredibuild-ubuntu-latest
     # This job is required by the release job, so we should make it run both from Nushell repo and nightly repo
     # if: github.repository == 'nushell/nightly'
     # Map a step output to a job output
@@ -141,23 +141,23 @@ jobs:
         - target: aarch64-pc-windows-msvc
           os: windows-11-arm
         - target: x86_64-unknown-linux-gnu
-          os: ubuntu-22.04
+          os: incredibuild-ubuntu-2204
         - target: x86_64-unknown-linux-musl
-          os: ubuntu-22.04
+          os: incredibuild-ubuntu-2204
         - target: aarch64-unknown-linux-gnu
-          os: ubuntu-22.04
+          os: incredibuild-ubuntu-2204
         - target: aarch64-unknown-linux-musl
-          os: ubuntu-22.04
+          os: incredibuild-ubuntu-2204
         - target: armv7-unknown-linux-gnueabihf
-          os: ubuntu-22.04
+          os: incredibuild-ubuntu-2204
         - target: armv7-unknown-linux-musleabihf
-          os: ubuntu-22.04
+          os: incredibuild-ubuntu-2204
         - target: riscv64gc-unknown-linux-gnu
-          os: ubuntu-22.04
+          os: incredibuild-ubuntu-2204
         - target: loongarch64-unknown-linux-gnu
-          os: ubuntu-22.04
+          os: incredibuild-ubuntu-2204
         - target: loongarch64-unknown-linux-musl
-          os: ubuntu-22.04
+          os: incredibuild-ubuntu-2204
 
     runs-on: ${{matrix.os}}
     permissions:
@@ -236,7 +236,7 @@ jobs:
   sha256sum:
     needs: [prepare, release]
     name: Create Sha256sum
-    runs-on: ubuntu-latest
+    runs-on: incredibuild-ubuntu-latest
     if: github.repository == 'nushell/nightly'
     permissions:
       # Update the nightly release with the checksum file.
@@ -267,7 +267,7 @@ jobs:
     # Should only run in nushell/nightly repo
     if: github.repository == 'nushell/nightly'
     needs: [release, sha256sum]
-    runs-on: ubuntu-latest
+    runs-on: incredibuild-ubuntu-latest
     permissions:
       # Delete outdated nightly releases.
       contents: write
